@@ -1135,6 +1135,35 @@ function renderScreen(s,sc){
 // ── Global parse state ────────────────────────────────────────────────────
 window.BQ = window.BQ || { bomFile:null, gerberData:null, drawingData:null, mappings:[], uploadedFiles:[] };
 
+window.bqHandlePolyDyne = function(files) {
+  if (!files || !files.length) return;
+  var f = files[0];
+  window.BQ.polyDyneFile = f;
+  var zone = document.getElementById('bq-polydyne-upload');
+  if (zone) {
+    zone.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;gap:8px">' +
+        '<i class="ph-duotone ph-file-xls" style="font-size:18px;color:#6c3fa0"></i>' +
+        '<span style="font-size:10px;font-weight:700;color:#6c3fa0">' + f.name + '</span>' +
+        '<button onclick="event.stopPropagation();window.bqRemovePolyDyne()" style="background:none;border:none;color:#e74c3c;font-size:13px;cursor:pointer;padding:0 4px" title="Remove">&times;</button>' +
+      '</div>';
+  }
+};
+
+window.bqRemovePolyDyne = function() {
+  window.BQ.polyDyneFile = null;
+  var zone = document.getElementById('bq-polydyne-upload');
+  if (zone) {
+    zone.innerHTML =
+      '<div style="font-size:13px;margin-bottom:4px"><i class="ph-duotone ph-upload-simple" style="font-size:13px;vertical-align:-2px;"></i></div>' +
+      '<div style="font-size:10px;color:#6c3fa0;font-weight:700;margin-bottom:3px">Upload QuoteWin Export</div>' +
+      '<div style="font-size:8px;color:#aaa;margin-bottom:8px">.XLS &middot; .XLSX &middot; .CSV</div>' +
+      '<button onclick="event.stopPropagation();document.getElementById(\'bq-quotewin-input\').click()" style="padding:5px 16px;background:#8e44ad;color:#fff;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">&#128194; Choose File</button>' +
+      '<span style="font-size:9px;color:#aaa;margin-left:8px">or drag &amp; drop</span>' +
+      '<input type="file" id="bq-quotewin-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="window.bqHandlePolyDyne && window.bqHandlePolyDyne(this.files)">';
+  }
+};
+
 // ═══════════════════════════════════════════════════════════════════════
 //  REAL DATA ENGINE — DB-240101-EV Motor Controller
 //  S1: Uncosted BOM  →  S5: PriceTrack Prices  →  S7: Costed BOM
@@ -4263,13 +4292,21 @@ function sSupplierQuoteSheet(s) {
     '</div>' +
     '<div class="section-card-body" style="padding:10px 12px">' +
       '<div style="display:flex;gap:0;margin-bottom:10px;border-bottom:1px solid #e0e0e0">' +
-        '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #f0a500\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:700;color:#333;border-bottom:2px solid #f0a500;cursor:pointer">IP PolyDyne</button>' +
+        '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #f0a500\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:700;color:#333;border-bottom:2px solid #f0a500;cursor:pointer">QuoteWin</button>' +
         '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #f0a500\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:600;color:#888;cursor:pointer">CalcuQuote</button>' +
         '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #f0a500\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:600;color:#888;cursor:pointer">Luminovo</button>' +
         '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #f0a500\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:600;color:#888;cursor:pointer">Zetwerk</button>' +
         '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #f0a500\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:600;color:#888;cursor:pointer">Sourcengine</button>' +
         '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #f0a500\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:600;color:#888;cursor:pointer">Custom CSV</button>' +
         '<button onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.style.borderBottom=\'none\');this.style.borderBottom=\'2px solid #2ecc71\'" style="padding:6px 14px;border:none;background:transparent;font-size:10px;font-weight:600;color:#27ae60;cursor:pointer">Price Track</button>' +
+      '</div>' +
+      '<div id="bq-polydyne-upload" style="border:1.5px dashed #c4a0e8;border-radius:7px;padding:12px;text-align:center;background:#faf5ff;cursor:pointer;margin-bottom:8px;transition:.2s" onmouseover="this.style.background=\'#f0eaff\'" onmouseout="this.style.background=\'#faf5ff\'">' +
+        '<div style="font-size:13px;margin-bottom:4px"><i class="ph-duotone ph-upload-simple" style="font-size:13px;vertical-align:-2px;"></i></div>' +
+        '<div style="font-size:10px;color:#6c3fa0;font-weight:700;margin-bottom:3px">Upload QuoteWin Export</div>' +
+        '<div style="font-size:8px;color:#aaa;margin-bottom:8px">.XLS &middot; .XLSX &middot; .CSV</div>' +
+        '<button onclick="event.stopPropagation();document.getElementById(\'bq-quotewin-input\').click()" style="padding:5px 16px;background:#8e44ad;color:#fff;border:none;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">&#128194; Choose File</button>' +
+        '<span style="font-size:9px;color:#aaa;margin-left:8px">or drag &amp; drop</span>' +
+        '<input type="file" id="bq-quotewin-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="window.bqHandlePolyDyne && window.bqHandlePolyDyne(this.files)">' +
       '</div>' +
       '<div style="background:#f0fff8;border:1.5px solid #2ecc7155;border-radius:7px;padding:10px;display:flex;align-items:center;gap:12px">' +
         '<div style="font-size:22px"><i class="ph-duotone ph-chart-bar" style="font-size:13px;vertical-align:-2px;"></i></div>' +

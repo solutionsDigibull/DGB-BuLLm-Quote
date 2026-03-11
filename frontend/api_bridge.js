@@ -282,6 +282,7 @@
   document.addEventListener("change", function (e) {
     const el = e.target;
     if (el.type !== "file") return;
+    if (el.id === 'bq-quotewin-input') return;  // handled by bqHandlePolyDyne
     const fname = (el.files[0] || {}).name || "";
     if (fname.toLowerCase().includes("qw") || fname.toLowerCase().includes("quotewin") ||
         fname.toLowerCase().includes("rev-float") || fname.toLowerCase().includes("award")) {
