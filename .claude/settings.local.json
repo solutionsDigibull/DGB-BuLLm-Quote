@@ -54,7 +54,14 @@
       "Bash(curl -sL \"https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js\" -o \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote/frontend/lib/xlsx.full.min.js\" && wc -c \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote/frontend/lib/xlsx.full.min.js\")",
       "Bash(curl -sL \"https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js\" -o \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote/frontend/lib/jszip.min.js\" && wc -c \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote/frontend/lib/jszip.min.js\")",
       "Bash(sleep 3 && curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000)",
-      "Bash(ls -la \"D:\\\\OneDrive\\\\Desktop\\\\BuLLMQuote - UI\\\\bullmquote\" 2>/dev/null | grep -E \"\\\\.\\(md|txt|json|py|sh|yml|yaml\\)$\")"
+      "Bash(ls -la \"D:\\\\OneDrive\\\\Desktop\\\\BuLLMQuote - UI\\\\bullmquote\" 2>/dev/null | grep -E \"\\\\.\\(md|txt|json|py|sh|yml|yaml\\)$\")",
+      "mcp__ide__getDiagnostics",
+      "Bash(awk 'NR==1172{print length}' \"D:\\\\OneDrive\\\\Desktop\\\\BuLLMQuote - UI\\\\bullmquote\\\\frontend\\\\index.html\")",
+      "Bash(find \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote\" -type f -name \"*.py\" | xargs grep -l \"hierarchy\\\\|Hierarchy\" 2>/dev/null)",
+      "WebSearch",
+      "Bash(claude mcp:*)",
+      "Bash(sed -n '1174p' \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote/frontend/index.html\" | node -e 'const line=require\\(\"fs\"\\).readFileSync\\(0,\"utf8\"\\).trim\\(\\);const s=line.indexOf\\(\"{\"\\);const e=line.lastIndexOf\\(\"}\"\\)+1;const d=JSON.parse\\(line.substring\\(s,e\\)\\);const k=Object.keys\\(d\\);console.log\\(\"Total:\",k.length\\);const m={};k.forEach\\(x=>{const g=d[x].mfg;m[g]=\\(m[g]||0\\)+1}\\);Object.keys\\(m\\).sort\\(\\).forEach\\(g=>console.log\\(g+\":\",m[g]\\)\\)')",
+      "Bash(sed -n '1174p' \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote/frontend/index.html\" && sed -n '1176p' \"D:/OneDrive/Desktop/BuLLMQuote - UI/bullmquote/frontend/index.html\")"
     ]
   }
 }

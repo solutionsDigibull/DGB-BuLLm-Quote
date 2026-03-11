@@ -28,6 +28,10 @@ async def parse_bom_preview(file: UploadFile = File(...)):
         import openpyxl
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         ws = wb.active
+        for name in wb.sheetnames:
+            if "SCRUB" in name.upper() or "BOM" in name.upper():
+                ws = wb[name]
+                break
         all_rows = list(ws.iter_rows(values_only=True))
         wb.close()
         if not all_rows:
