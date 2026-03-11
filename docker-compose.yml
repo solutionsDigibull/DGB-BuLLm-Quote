@@ -1,22 +1,10 @@
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: bullmquote
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
   app:
     build: .
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/bullmquote
+      DATABASE_URL: postgresql+asyncpg://postgres:DigiBull@host.docker.internal:5433/bullmquote
       SECRET_KEY: changeme-in-production
-    depends_on:
-      - db
-
-volumes:
-  pgdata:
+    extra_hosts:
+      - "host.docker.internal:host.gateway"

@@ -11,7 +11,6 @@ COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 
 # Environment defaults (override at runtime)
-ENV DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/bullmquote
 ENV SECRET_KEY=changeme-in-production
 
 EXPOSE 8000
