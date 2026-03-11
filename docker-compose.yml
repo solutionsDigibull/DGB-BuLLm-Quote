@@ -2,9 +2,10 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:DigiBull@host.docker.internal:5433/bullmquote
       SECRET_KEY: changeme-in-production
     extra_hosts:
-      - "host.docker.internal:host.gateway"
+      - "host.docker.internal:host-gateway"
+
