@@ -152,3 +152,29 @@ async def get_cbom_rows(project_id: int, volume: str = "PROTO",
         {c.key: getattr(r, c.key) for c in r.__table__.columns}
         for r in rows
     ]
+
+
+@router.get("/{project_id}/excess-inventory")
+async def get_excess_inventory(project_id: int, volume: str = "PROTO",
+                               db: AsyncSession = Depends(get_db)):
+    res = await db.execute(
+        select(ExInvRow)
+        .where(ExInvRow.project_id == project_id, ExInvRow.volume == volume)
+        .order_by(ExInvRow.cpn)
+    )
+    rows = res.scalars().all()
+    return [
+        {c.key: getattr(r, c.key) for c in r.__table__.columns}
+        for r in rows
+    ]
+
+
+@router.delete("/{project_id}/rows")
+async def delete_cbom_rows(project_id: int, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Project).where(Project.id == project_id))
+    if not res.scalar_one_or_none():
+        raise HTTPException(404, "Project not found")
+    await db.execute(delete(CbomRow).where(CbomRow.project_id == project_id))
+    await db.execute(delete(ExInvRow).where(ExInvRow.project_id == project_id))
+    await db.commit()
+    return {"msg": "CBOM and excess inventory cleared"}

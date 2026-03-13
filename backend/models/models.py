@@ -4,6 +4,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 import enum
+import json
 
 class VolumeType(str, enum.Enum):
     PROTO = "PROTO"
@@ -32,6 +33,8 @@ class Project(Base):
     cbom_rows   = relationship("CbomRow",   back_populates="project", cascade="all, delete-orphan")
     nre_lines   = relationship("NreLine",   back_populates="project", cascade="all, delete-orphan")
     ex_inv_rows = relationship("ExInvRow",  back_populates="project", cascade="all, delete-orphan")
+    bom_detail  = relationship("BomDetail", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    fg_counts   = relationship("FgCount",   back_populates="project", cascade="all, delete-orphan")
 
 class BomLine(Base):
     __tablename__ = "bom_lines"
@@ -77,10 +80,23 @@ class QwPrice(Base):
     awarded_vol1 = Column(Integer)
     awarded_vol2 = Column(Integer)
     awarded_vol3 = Column(Integer)
-    ncnr         = Column(String(16))
-    part_status  = Column(String(64))
-    payment_term = Column(String(64))
-    long_comment = Column(Text)
+    ncnr              = Column(String(16))
+    part_status       = Column(String(64))
+    payment_term      = Column(String(64))
+    proto_cost_conv   = Column(Float)   # Cost from proto Award# group (when has_proto)
+    proto_price_orig  = Column(Float)   # Price orig from proto Award# group (when has_proto)
+    long_comment         = Column(Text)
+    corrected_mpn        = Column(String(256))
+    part_description     = Column(String(512))
+    effective_from_date  = Column(String(32))
+    expiry_date          = Column(String(32))
+    quote_validity_weeks = Column(Integer)
+    price_control        = Column(String(32), default="centum")
+    revision_no          = Column(Integer, default=0)
+    no_bid               = Column(Boolean, default=False)
+    is_l1                = Column(Boolean, default=False)
+    total_part_qty       = Column(Float)
+    uploaded_through     = Column(String(64), default="Direct")
 
     project = relationship("Project", back_populates="qw_prices")
 
@@ -160,6 +176,31 @@ class ExInvRow(Base):
     moq              = Column(Integer)
 
     project = relationship("Project", back_populates="ex_inv_rows")
+
+class BomDetail(Base):
+    __tablename__ = "bom_details"
+    id               = Column(Integer, primary_key=True)
+    project_id       = Column(Integer, ForeignKey("projects.id"), unique=True, index=True)
+    proto            = Column(Integer, default=0)       # proto board qty from Settings
+    volume_count     = Column(Integer, default=2)       # number of production volumes (excl. proto)
+    total_fg_count   = Column(Integer, default=0)
+    total_cpn_count  = Column(Integer, default=0)
+    is_valid_bom     = Column(Boolean, default=False)
+    settings_json    = Column(Text)  # raw JSON of fg→{vol_no→qty}
+
+    project = relationship("Project", back_populates="bom_detail")
+
+
+class FgCount(Base):
+    __tablename__ = "fg_counts"
+    id         = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), index=True)
+    fg         = Column(String(128))
+    volume_no  = Column(Integer)   # 1, 2, 3
+    count      = Column(Float)
+
+    project = relationship("Project", back_populates="fg_counts")
+
 
 class User(Base):
     __tablename__ = "users"

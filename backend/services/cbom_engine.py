@@ -106,7 +106,7 @@ def _compute_vol(
         "nre_charge":      nre,
         "nre_charge_conv": nre,
         "ncnr":            ncnr,
-        "price_control":   "centum",
+        "price_control":   price_info.get("price_control", "centum") if price_info else "centum",
         "scrap_factor":    scrap_f,
         "scrap_qty":       scrap_qty,
         "payment_term":    pay_term,

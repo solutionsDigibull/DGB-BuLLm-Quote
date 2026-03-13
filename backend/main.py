@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from routers import projects, bom, qw, cbom, export, auth
+from routers import projects, bom, qw, cbom, export, auth, nre
 
 app = FastAPI(title="BuLLMQuote API", version="0.1.0")
 
@@ -21,6 +21,7 @@ app.include_router(bom.router,      prefix="/api/bom",     tags=["bom"])
 app.include_router(qw.router,       prefix="/api/qw",      tags=["qw"])
 app.include_router(cbom.router,     prefix="/api/cbom",    tags=["cbom"])
 app.include_router(export.router,   prefix="/api/export",  tags=["export"])
+app.include_router(nre.router,      prefix="/api/nre",     tags=["nre"])
 
 @app.get("/health")
 def health():

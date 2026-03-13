@@ -68,6 +68,116 @@ def _detect_columns(header_row) -> Optional[Dict[str, int]]:
     return detected if len(detected) >= 3 else None
 
 
+def _parse_settings_sheet(wb) -> Dict[str, Any]:
+    """
+    Read the Settings sheet for proto qty and per-FG volume quantities.
+    Expected layout:
+      - First column: row labels (e.g. "Proto", "FG1", "FG2", ...)
+      - Header row contains "FG" and "V1 Qty", "V2 Qty", ... columns
+    Returns:
+      {
+        "proto": int,
+        "volume_count": int,
+        "fg_volumes": {fg: {1: qty, 2: qty, ...}}
+      }
+    """
+    default = {"proto": 0, "volume_count": 2, "fg_volumes": {}}
+
+    settings_ws = None
+    for name in wb.sheetnames:
+        if "setting" in name.lower():
+            settings_ws = wb[name]
+            break
+    if not settings_ws:
+        return default
+
+    all_rows = list(settings_ws.iter_rows(values_only=True))
+    if not all_rows:
+        return default
+
+    # Find header row: look for a row containing volume qty headers (V\d+ Qty)
+    header_idx = None
+    header_row = None
+    vol_col_map: Dict[int, int] = {}   # volume_no → col_index
+    fg_col: Optional[int] = None
+    proto_col: Optional[int] = None
+
+    for ri, row in enumerate(all_rows):
+        cells = [str(c).strip() if c is not None else "" for c in row]
+        # Check for "V1 Qty" style headers
+        vol_matches = [(ci, re.match(r"V(\d+)\s*Qty", c, re.IGNORECASE)) for ci, c in enumerate(cells)]
+        vol_matches = [(ci, m) for ci, m in vol_matches if m]
+        if vol_matches:
+            header_idx = ri
+            header_row = cells
+            for ci, m in vol_matches:
+                vol_col_map[int(m.group(1))] = ci
+            # Find FG column
+            for ci, c in enumerate(cells):
+                if re.search(r"^fg$", c, re.IGNORECASE):
+                    fg_col = ci
+                    break
+            # Find proto column
+            for ci, c in enumerate(cells):
+                if re.search(r"proto", c, re.IGNORECASE):
+                    proto_col = ci
+                    break
+            break
+
+    if header_idx is None or not vol_col_map:
+        return default
+
+    volume_count = len(vol_col_map)
+    proto_qty = 0
+    fg_volumes: Dict[str, Dict[int, float]] = {}
+
+    for row in all_rows[header_idx + 1:]:
+        cells = [row[i] if i < len(row) else None for i in range(len(all_rows[header_idx]))]
+
+        # Check if this is the proto row
+        label = str(cells[0]).strip().upper() if cells[0] else ""
+        if label == "PROTO" or (proto_col is not None and cells[proto_col] is not None):
+            # Proto row: read first vol qty column as proto qty
+            if vol_col_map:
+                first_vol_ci = vol_col_map.get(1, min(vol_col_map.values()))
+                v = cells[first_vol_ci] if first_vol_ci < len(cells) else None
+                try:
+                    proto_qty = int(float(v)) if v is not None else 0
+                except (ValueError, TypeError):
+                    proto_qty = 0
+            if label == "PROTO":
+                continue  # don't add proto as an FG
+
+        # Read FG volumes
+        fg_val = None
+        if fg_col is not None and fg_col < len(cells):
+            fg_val = cells[fg_col]
+        elif cells[0]:
+            fg_val = cells[0]
+
+        if not fg_val:
+            continue
+        fg_str = str(fg_val).strip()
+        if not fg_str or fg_str.upper() in ("FG", "PROTO", ""):
+            continue
+
+        vols: Dict[int, float] = {}
+        for vol_no, ci in vol_col_map.items():
+            v = cells[ci] if ci < len(cells) else None
+            try:
+                vols[vol_no] = float(v) if v is not None else 0.0
+            except (ValueError, TypeError):
+                vols[vol_no] = 0.0
+        if any(v > 0 for v in vols.values()):
+            fg_volumes[fg_str] = vols
+
+    return {
+        "proto": proto_qty,
+        "volume_count": volume_count,
+        "fg_volumes": fg_volumes,
+    }
+
+
 def parse_scrub_bom(file_bytes: bytes) -> Dict[str, Any]:
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
 
@@ -147,9 +257,18 @@ def parse_scrub_bom(file_bytes: bytes) -> Dict[str, Any]:
         if asm:
             assemblies.add(asm)
 
+    settings = _parse_settings_sheet(wb)
+
     return {
         "rows":       rows_out,
         "fg_parts":   sorted(fg_parts),
         "assemblies": sorted(assemblies),
         "total":      len(rows_out),
+        "bom_detail": {
+            "proto":           settings["proto"],
+            "volume_count":    settings["volume_count"],
+            "total_fg_count":  len(fg_parts),
+            "total_cpn_count": len(rows_out),
+        },
+        "fg_volumes": settings["fg_volumes"],
     }

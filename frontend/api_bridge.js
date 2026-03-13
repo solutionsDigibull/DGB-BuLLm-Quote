@@ -115,6 +115,7 @@
   window.BQ_API.logout = function () {
     _token = "";
     localStorage.removeItem("bq_token");
+    if (window.bqState) window.bqState.clearAll();
   };
 
   // ── LOGIN MODAL INTEGRATION ───────────────────────────────────────────────
@@ -219,6 +220,7 @@
     if (proj && typeof proj.id === 'number') {
       _activeProjectId = proj.id;
       window.BQ_ACTIVE_PROJECT_ID = proj.id;
+      if(window.bqState){window.bqState.clearNav();window.bqState.saveProject(proj.id);}
     }
     if (_origSelectProject) _origSelectProject(proj);
   };
@@ -228,6 +230,7 @@
     if (proj && typeof proj.id === 'number') {
       _activeProjectId = proj.id;
       window.BQ_ACTIVE_PROJECT_ID = proj.id;
+      if(window.bqState){window.bqState.clearNav();window.bqState.saveProject(proj.id);}
     }
     if (_origOnProjectSelect) _origOnProjectSelect(proj);
   };
@@ -259,6 +262,31 @@
     }
   };
 
+  // ── BOM VERIFY TEMPLATE ───────────────────────────────────────────────────
+  window.bqVerifyBOMTemplate = async function(file) {
+    await _ensureAuth();
+    function _mkFd() { const fd = new FormData(); fd.append("file", file); return fd; }
+    let resp = await fetch(API_BASE + "/bom/verify-template", {
+      method: "POST",
+      headers: _token ? { Authorization: "Bearer " + _token } : {},
+      body: _mkFd(),
+    });
+    // Auto-retry once on 401
+    if (resp.status === 401) {
+      _token = "";
+      localStorage.removeItem("bq_token");
+      await _ensureAuth();
+      resp = await fetch(API_BASE + "/bom/verify-template", {
+        method: "POST",
+        headers: _token ? { Authorization: "Bearer " + _token } : {},
+        body: _mkFd(),
+      });
+    }
+    // 422 means validation issues — parse the body rather than throwing
+    if (!resp.ok && resp.status !== 422) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  };
+
   // ── QW FILE UPLOAD HOOK ───────────────────────────────────────────────────
   // Called by S3 "Upload QW File" button
   window.BQ_API.uploadQW = async function (file, projectId) {
@@ -276,6 +304,55 @@
     };
     _ok("QW file uploaded — " + result.cpn_count + " CPNs resolved");
     return result;
+  };
+
+  // ── POLYDYNE / QUOTEWIN UPLOAD INTEGRATION ────────────────────────────────
+  const _origHandlePolyDyne = window.bqHandlePolyDyne;
+  window.bqHandlePolyDyne = async function(files) {
+    // 1. Run original (updates upload-zone UI with filename)
+    if (_origHandlePolyDyne) _origHandlePolyDyne(files);
+    if (!files || !files.length) return;
+    const file = files[0];
+
+    // 2. Upload to API
+    let result;
+    try {
+      result = await window.BQ_API.uploadQW(file);
+    } catch (e) {
+      _err("QW upload failed: " + (e && e.message ? e.message : String(e)));
+      return;
+    }
+
+    // 3. Convert resolved → priceTrackData format
+    const resolved = result.resolved || {};
+    const priceTrackData = {};
+    for (const [cpn, entry] of Object.entries(resolved)) {
+      const v = entry.v1 || {};
+      priceTrackData[cpn] = {
+        supp:      v.supp      || '',
+        lt:        v.lt        || null,
+        ncnr:      v.ncnr      || '',
+        curr:      v.currency  || 'USD',
+        mfg:       '',
+        mpn:       v.mpn       || cpn,
+        moq:       v.moq       || null,
+        unitPrice: v.cost      || 0,
+      };
+    }
+
+    // 4. Store in BQ state
+    window.BQ = window.BQ || {};
+    window.BQ.priceTrackData = priceTrackData;
+    window.BQ.quoteWinFile = {
+      filename: file.name,
+      parts:    result.cpn_count || Object.keys(priceTrackData).length,
+      project:  (window.BQ_ACTIVE_PROJECT && window.BQ_ACTIVE_PROJECT.name) || '',
+      currency: 'USD',
+    };
+    window.BQ_QW_LOADED = true;
+
+    // 5. Re-render current screen so preview table shows live data
+    if (window.render) window.render();
   };
 
   // Hook into any QW file input on the page
@@ -296,6 +373,67 @@
     }
   });
 
+  // ── NRE ITEM DEFINITIONS ──────────────────────────────────────────────────
+  var NRE_ITEMS = [
+    { cat: 'Tooling',     label: 'SMT Stencil - Top Side',              unit: 320  },
+    { cat: 'Tooling',     label: 'SMT Stencil - Bottom Side',           unit: 280  },
+    { cat: 'Tooling',     label: 'Reflow Profile Development',          unit: 450  },
+    { cat: 'Setup',       label: 'SMT Line Changeover',                 unit: 180  },
+    { cat: 'Setup',       label: 'AOI Programming',                     unit: 220  },
+    { cat: 'Setup',       label: 'ICT Fixture Design',                  unit: 1800 },
+    { cat: 'Engineering', label: 'DFM Review',                          unit: 290  },
+    { cat: 'Engineering', label: 'Programme Management',                unit: 580  },
+  ];
+  var FAI_ITEMS = [
+    { cat: 'Inspection',    label: 'Full Dimensional Inspection (IPC-A-610)',  unit: 180 },
+    { cat: 'Inspection',    label: 'Electrical Functional Test - FAI Board',   unit: 220 },
+    { cat: 'Documentation', label: 'FAI Report Preparation (AS9102 format)',   unit: 190 },
+    { cat: 'Documentation', label: 'Traceability Pack & Serialisation',        unit: 85  },
+    { cat: 'Test',          label: 'Solderability Inspection (IPC-J-STD-001)', unit: 60  },
+    { cat: 'Test',          label: 'X-Ray Inspection (BGA / QFN joints)',      unit: 110 },
+  ];
+
+  // ── NRE SAVE COLLECTOR ────────────────────────────────────────────────────
+  window.bqSaveNre = async function () {
+    const pid = window.BQ_ACTIVE_PROJECT_ID || _activeProjectId || (window.BQ_ACTIVE_PROJECT && window.BQ_ACTIVE_PROJECT.id);
+    if (!pid) return;
+    var lines = [];
+    NRE_ITEMS.forEach(function (item, i) {
+      var el = document.getElementById('nre-row-' + i);
+      var val = el ? parseFloat(el.value) || 0
+                   : (window.BQ && window.BQ._nre && window.BQ._nre[i] != null ? parseFloat(window.BQ._nre[i]) || 0 : item.unit);
+      lines.push({
+        nre_type: item.cat,
+        cpn: '',
+        description: item.label,
+        commodity: '',
+        manufacturer: '',
+        mpn: '',
+        nre_charge_conv: val,
+      });
+    });
+    FAI_ITEMS.forEach(function (item, i) {
+      var el = document.getElementById('fai-row-' + i);
+      var val = el ? parseFloat(el.value) || 0
+                   : (window.BQ && window.BQ._faiCost && window.BQ._faiCost[i] != null ? parseFloat(window.BQ._faiCost[i]) || 0 : item.unit);
+      lines.push({
+        nre_type: item.cat,
+        cpn: '',
+        description: item.label,
+        commodity: '',
+        manufacturer: '',
+        mpn: '',
+        nre_charge_conv: val,
+      });
+    });
+    try {
+      await window.BQ_API.uploadNre(pid, lines);
+      _ok("NRE lines saved (" + lines.length + " items)");
+    } catch (e) {
+      _err("NRE save failed: " + (e && e.message ? e.message : String(e)));
+    }
+  };
+
   // ── CBOM GENERATE (replaces seed-data logic) ──────────────────────────────
   const _origGenerateCBOM = window.bqGenerateCBOM;
   window.bqGenerateCBOM = async function () {
@@ -305,6 +443,10 @@
       if (_origGenerateCBOM) _origGenerateCBOM();
       return;
     }
+    // Sync NRE data to DB before computing CBOM
+    await window.bqSaveNre().catch(function (e) {
+      _err("NRE save failed before CBOM: " + (e && e.message ? e.message : String(e)));
+    });
     try {
       _toast("⚙ Computing CBOM…", "#8e44ad");
       const result = await _api("POST", "/cbom/" + pid + "/compute");
@@ -338,9 +480,19 @@
     if (!pid) { _err("No active project — cannot export"); return; }
     try {
       _toast("⬇ Generating Excel workbook…", "#1a6a4a");
-      const res = await fetch(API_BASE + "/export/" + pid + "/cbom-xlsx", {
+      await _ensureAuth();
+      let res = await fetch(API_BASE + "/export/" + pid + "/cbom-xlsx", {
         headers: _token ? { Authorization: "Bearer " + _token } : {},
       });
+      // Auto-retry once on 401
+      if (res.status === 401) {
+        _token = "";
+        localStorage.removeItem("bq_token");
+        await _ensureAuth();
+        res = await fetch(API_BASE + "/export/" + pid + "/cbom-xlsx", {
+          headers: _token ? { Authorization: "Bearer " + _token } : {},
+        });
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText || "Export failed" }));
         throw new Error(_extractErrorMsg(err, res.statusText || "Export failed"));
@@ -362,22 +514,6 @@
     }
   };
 
-  // Patch the Workbook button in S8 Report Builder
-  // Override bqBulkDownload to also offer workbook
-  const _origBulkDownload = window.bqBulkDownload;
-  window.bqBulkDownload = function () {
-    if (_origBulkDownload) _origBulkDownload();
-  };
-
-  // Intercept all "Opening Excel Workbook export..." alerts
-  const _origAlert = window.alert;
-  window.alert = function (msg) {
-    if (typeof msg === "string" && msg.toLowerCase().includes("excel workbook")) {
-      window.BQ_API.downloadWorkbook();
-      return;
-    }
-    _origAlert.call(window, msg);
-  };
 
   // ── PROJECTS LIST ─────────────────────────────────────────────────────────
   window.BQ_API.listProjects = async function () {
@@ -387,6 +523,7 @@
   window.BQ_API.selectProject = async function (id) {
     _activeProjectId = id;
     window.BQ_ACTIVE_PROJECT_ID = id;
+    if(window.bqState)window.bqState.saveProject(id);
     const proj = await _api("GET", "/projects/" + id);
     window.BQ = window.BQ || {};
     window.BQ.apiProject = proj;
@@ -400,22 +537,165 @@
     return _api("GET", "/cbom/" + pid + "/rows?volume=" + (volume || "PROTO"));
   };
 
+  // ── AUTH — extended ───────────────────────────────────────────────────────
+  window.BQ_API.getMe = async function () {
+    return _api("GET", "/auth/me");
+  };
+
+  window.BQ_API.registerUser = async function (data) {
+    return _api("POST", "/auth/register", data);
+  };
+
+  window.BQ_API.listUsers = async function () {
+    return _api("GET", "/auth/users");
+  };
+
+  window.BQ_API.updateUser = async function (id, data) {
+    return _api("PATCH", "/auth/users/" + id, data);
+  };
+
+  window.BQ_API.deleteUser = async function (id) {
+    return _api("DELETE", "/auth/users/" + id);
+  };
+
+  // ── PROJECT MANAGEMENT — extended ─────────────────────────────────────────
+  window.BQ_API.updateProject = async function (id, data) {
+    return _api("PATCH", "/projects/" + id, data);
+  };
+
+  window.BQ_API.deleteProject = async function (id) {
+    return _api("DELETE", "/projects/" + id);
+  };
+
+  window.BQ_API.getProjectSummary = async function (id) {
+    return _api("GET", "/projects/" + id + "/summary");
+  };
+
+  // Patch bqRemoveProjectRow to also delete from DB
+  const _origRemoveProjectRow = window.bqRemoveProjectRow;
+  window.bqRemoveProjectRow = async function (rowId) {
+    // Try to find the numeric project id from the row element or BQ_PROJECTS
+    var pid = null;
+    var rowEl = document.getElementById(rowId) || document.querySelector('[data-row-id="' + rowId + '"]');
+    if (rowEl) {
+      pid = rowEl.getAttribute('data-project-id');
+      if (pid) pid = parseInt(pid, 10) || null;
+    }
+    if (!pid && window.BQ_PROJECTS) {
+      var match = window.BQ_PROJECTS.find(function (p) {
+        return p.rowId === rowId || p.id === rowId || String(p.id) === String(rowId);
+      });
+      if (match) pid = match.id;
+    }
+    if (pid && Number.isInteger(pid)) {
+      try {
+        await window.BQ_API.deleteProject(pid);
+        if (_activeProjectId === pid) {
+          _activeProjectId = null;
+          window.BQ_ACTIVE_PROJECT_ID = null;
+        }
+      } catch (e) {
+        _err("Delete project failed: " + (e && e.message ? e.message : String(e)));
+        return; // don't remove DOM row on failure
+      }
+    }
+    if (_origRemoveProjectRow) _origRemoveProjectRow(rowId);
+  };
+
+  // ── BOM MANAGEMENT ────────────────────────────────────────────────────────
+  window.BQ_API.getBomLines = async function (id) {
+    return _api("GET", "/bom/" + id + "/lines");
+  };
+
+  window.BQ_API.clearBomLines = async function (id) {
+    return _api("DELETE", "/bom/" + id + "/lines");
+  };
+
+  // ── QW MANAGEMENT ─────────────────────────────────────────────────────────
+  window.BQ_API.getQwResolved = async function (id) {
+    return _api("GET", "/qw/" + id + "/resolved");
+  };
+
+  window.BQ_API.getQwPrices = async function (id) {
+    return _api("GET", "/qw/" + id + "/prices");
+  };
+
+  window.BQ_API.clearQwPrices = async function (id) {
+    return _api("DELETE", "/qw/" + id + "/prices");
+  };
+
+  // ── CBOM MANAGEMENT — extended ────────────────────────────────────────────
+  window.BQ_API.getExcessInventory = async function (id, vol) {
+    return _api("GET", "/cbom/" + id + "/excess-inventory?volume=" + (vol || "PROTO"));
+  };
+
+  window.BQ_API.clearCbomRows = async function (id) {
+    return _api("DELETE", "/cbom/" + id + "/rows");
+  };
+
+  // ── NRE MANAGEMENT ────────────────────────────────────────────────────────
+  window.BQ_API.uploadNre = async function (id, lines) {
+    return _api("POST", "/nre/" + id + "/upload", lines);
+  };
+
+  window.BQ_API.getNreLines = async function (id) {
+    return _api("GET", "/nre/" + id + "/lines");
+  };
+
+  window.BQ_API.clearNreLines = async function (id) {
+    return _api("DELETE", "/nre/" + id + "/lines");
+  };
+
+  // ── EXPORT SUMMARY ────────────────────────────────────────────────────────
+  window.BQ_API.getExportSummary = async function (id) {
+    return _api("GET", "/export/" + id + "/summary-json");
+  };
+
+  // ── HEALTH CHECK ──────────────────────────────────────────────────────────
+  window.BQ_API.healthCheck = async function () {
+    const res = await fetch("/health");
+    if (!res.ok) throw new Error("Health check failed");
+    return res.json();
+  };
+
   // ── STARTUP ───────────────────────────────────────────────────────────────
   (async function init() {
+    // Health check
+    try {
+      const health = await window.BQ_API.healthCheck();
+      console.log("[BQ Bridge] Health:", health);
+    } catch (_) {
+      console.warn("[BQ Bridge] Backend health check failed — server may be offline.");
+    }
     // Ensure default admin user exists
     try { await fetch(API_BASE + "/auth/init-admin", { method: "POST" }); } catch(_) {}
     // Auto-login if no token
     await _ensureAuth();
     if (!_token) return;
+    // Populate window.BQ_USER with logged-in user profile
+    try {
+      const me = await window.BQ_API.getMe();
+      window.BQ_USER = me;
+      window.BQ_USER_ROLE = me.role;
+      console.log("[BQ Bridge] Logged in as:", me.username, "(" + me.role + ")");
+    } catch (_) {}
     try {
       // Verify token is still valid by loading project list
       const projs = await window.BQ_API.listProjects();
       if (projs.length) {
         console.log("[BQ Bridge] Authenticated. " + projs.length + " project(s) available.");
-        // Auto-select most recent project
-        const last = projs[0];
-        _activeProjectId = last.id;
-        window.BQ_ACTIVE_PROJECT_ID = last.id;
+        // Restore saved project or auto-select most recent
+        const savedPid = window.bqState ? window.bqState.getSavedProject() : null;
+        const match = savedPid && projs.find(p => p.id === savedPid);
+        if (savedPid && !match) {
+          console.warn("[BQ Bridge] Saved project " + savedPid + " no longer exists.");
+          if (window.bqState) { window.bqState.clearNav(); window.bqState.saveProject(null); }
+          _toast("Previous project was removed — switched to " + projs[0].code, "#f0a500");
+        }
+        const pick = match || projs[0];
+        _activeProjectId = pick.id;
+        window.BQ_ACTIVE_PROJECT_ID = pick.id;
+        if (window.bqState) window.bqState.saveProject(pick.id);
       }
     } catch (_) {
       // Token expired or invalid — clear it

@@ -1,7 +1,7 @@
 """Run once on startup to create all tables."""
 import asyncio
 from database import engine, Base
-from models.models import Project, BomLine, QwPrice, CbomRow, NreLine, ExInvRow, User
+from models.models import Project, BomLine, QwPrice, CbomRow, NreLine, ExInvRow, User, BomDetail, FgCount
 
 async def init():
     async with engine.begin() as conn:

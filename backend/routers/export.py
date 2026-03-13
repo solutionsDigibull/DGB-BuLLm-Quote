@@ -16,6 +16,49 @@ router = APIRouter()
 def _rows_to_dicts(rows):
     return [{c.key: getattr(r, c.key) for c in r.__table__.columns} for r in rows]
 
+@router.get("/{project_id}/summary-json")
+async def export_summary_json(project_id: int,
+                               db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(Project).where(Project.id == project_id))
+    proj = res.scalar_one_or_none()
+    if not proj:
+        raise HTTPException(404, "Project not found")
+
+    project_dict = {c.key: getattr(proj, c.key) for c in proj.__table__.columns}
+    # Serialize datetime fields
+    for k in ("created_at", "updated_at"):
+        if project_dict.get(k):
+            project_dict[k] = project_dict[k].isoformat()
+
+    from sqlalchemy import func
+    bom_count = (await db.execute(
+        select(func.count(BomLine.id)).where(BomLine.project_id == project_id)
+    )).scalar()
+    qw_count = (await db.execute(
+        select(func.count(QwPrice.id)).where(QwPrice.project_id == project_id)
+    )).scalar()
+
+    vol_summaries = {}
+    for vol in ["PROTO", "VL1", "VL2"]:
+        res = await db.execute(
+            select(CbomRow).where(
+                CbomRow.project_id == project_id, CbomRow.volume == vol
+            ).order_by(CbomRow.assembly, CbomRow.cpn)
+        )
+        rows = _rows_to_dicts(res.scalars().all())
+        vol_summaries[vol] = {
+            "line_count": len(rows),
+            "assembly_summary": assembly_summary(rows) if rows else {},
+        }
+
+    return {
+        "project": project_dict,
+        "bom_line_count": bom_count,
+        "qw_price_count": qw_count,
+        "volumes": vol_summaries,
+    }
+
+
 @router.get("/{project_id}/cbom-xlsx")
 async def export_cbom_xlsx(project_id: int,
                            db: AsyncSession = Depends(get_db)):
